@@ -10,13 +10,13 @@ class DataFaker
     { name: 'name', faker: -> { Faker::Name.name } },
     { name: 'avatar', faker: -> { Faker::Avatar.image } },
     { name: 'sex', faker: -> { Faker::Gender.binary_type } },
-    { name: 'active', faker: -> { Faker::Boolean.boolean ? 'active' : 'inactive' } }
+    { name: 'active', faker: -> { Faker::Boolean.boolean(true_ratio: 0.5) } }
   ]
 
   def self.create_users_csv
     CSV.open('users.csv', 'a', col_sep: ';') do |csv|
       csv << @users.map { |field| field[:name] }
-      (1..20).each do |_i|
+      (1..10).each do |_i|
         csv << @users.map { |field| field[:faker].call }
       end
     end
@@ -29,6 +29,8 @@ class UserAPIConsumer
   require 'zip'
   require 'caracal'
   require 'google_drive'
+  require 'csv'
+  require 'json'
 
   @conn = Faraday.new(url: 'https://6418014ee038c43f38c45529.mockapi.io/api/v1') do |faraday|
     faraday.request  :url_encoded
@@ -50,6 +52,7 @@ class UserAPIConsumer
 
   @docx_file_path = "#{@folder}/#{@docx_file_name}"
   @zip_file_path = "#{@folder}/#{@zip_file_name}"
+  @csv_file_path = "#{@folder}/users.csv"
 
   @session = GoogleDrive::Session.from_config('config.json')
 
@@ -59,7 +62,14 @@ class UserAPIConsumer
   end
 
   def self.new_user(*params)
-    @conn.post '/users', params[0]
+    res = @conn.post '/users', params[0].to_json, { 'Content-Type' => 'application/json' }
+    if res.status == 201
+      puts 'User created successful!'
+      puts res.body
+    else
+      puts 'Request failed!'
+      puts res.status
+    end
   end
 
   def self.show_user(id, *params)
@@ -68,7 +78,14 @@ class UserAPIConsumer
   end
 
   def self.update_user(id, *params)
-    @conn.put "/users/#{id}", params[0]
+    res = @conn.put "/users/#{id}", params[0].to_json, { 'Content-Type' => 'application/json' }
+    if res.status == 200
+      puts 'User updated successful!'
+      puts res.body
+    else
+      puts 'Request failed!'
+      puts res.status
+    end
   end
 
   def self.delete_user(id)
@@ -106,6 +123,19 @@ class UserAPIConsumer
     updating_file = @session.file_by_title(file_name)
     updating_file.update_from_file(file_path)
   end
+
+  def self.import_csv
+    csv = CSV.read(@csv_file_path, col_sep: ';', headers: true)
+    csv.map(&:to_hash).each do |user|
+      user_search = users_index({ name: user['name'] })
+      user['active'] = user['active'].downcase == 'true'
+      if user_search.empty?
+        new_user(user)
+      else
+        update_user(user_search[0]['id'], user)
+      end
+    end
+  end
 end
 
 # List all users
@@ -124,7 +154,7 @@ new_user = {
   'name' => 'Nguyen Khoa Hoang Phuc',
   'avatar' => 'google.com',
   'sex' => 'male',
-  'active' => 'true'
+  'active' => true
 }
 UserAPIConsumer.new_user(new_user)
 
@@ -142,7 +172,7 @@ user = UserAPIConsumer.show_user(66)
 p user
 
 # Delete user
-UserAPIConsumer.delete_user(66)
+UserAPIConsumer.delete_user(157)
 
 # List users to .doc file, then compress to .zip file,
 #   then upload to Google Drive
@@ -153,3 +183,6 @@ UserAPIConsumer.check_drive
 
 # Create users csv file
 DataFaker.create_users_csv
+
+# Import or update users from CSV file
+UserAPIConsumer.import_csv
