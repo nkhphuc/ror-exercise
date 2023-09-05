@@ -1,5 +1,28 @@
 # frozen_string_literal: true
 
+# Create class DataFaker to fake data
+class DataFaker
+  require 'faker'
+  require 'csv'
+
+  @users = [
+    { name: 'created_at', faker: -> { Faker::Time.between(from: DateTime.now - 1, to: DateTime.now) } },
+    { name: 'name', faker: -> { Faker::Name.name } },
+    { name: 'avatar', faker: -> { Faker::Avatar.image } },
+    { name: 'sex', faker: -> { Faker::Gender.binary_type } },
+    { name: 'active', faker: -> { Faker::Boolean.boolean ? 'active' : 'inactive' } }
+  ]
+
+  def self.create_users_csv
+    CSV.open('users.csv', 'a', col_sep: ';') do |csv|
+      csv << @users.map { |field| field[:name] }
+      (1..20).each do |_i|
+        csv << @users.map { |field| field[:faker].call }
+      end
+    end
+  end
+end
+
 # Create class UserAPIConsumer to interact with API
 class UserAPIConsumer
   require 'faraday'
@@ -127,3 +150,6 @@ UserAPIConsumer.zip_then_upload
 
 # Check files on Google Drive
 UserAPIConsumer.check_drive
+
+# Create users csv file
+DataFaker.create_users_csv
